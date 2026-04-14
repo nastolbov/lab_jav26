@@ -1,0 +1,11 @@
+target/
+.classpath
+.project
+.settings/
+.idea/
+*.iml
+.vscode/
+node_modules/
+src/main/frontend/generated/
+*.log
+*.class

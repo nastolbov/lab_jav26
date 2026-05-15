@@ -4,7 +4,7 @@
 
 ## Шаг 0 — Установить всё необходимое (один раз)
 
-### 1. Java 17
+### 1. Java 17 или новее
 
 Открой Терминал (Cmd+Space → «Терминал») и проверь:
 
@@ -12,7 +12,7 @@
 java -version
 ```
 
-Если вывод `java version "17..."` или `openjdk version "17..."` — всё хорошо, пропускай.
+Если вывод показывает версию **17 или выше** — всё хорошо, пропускай.
 
 Если ошибка или версия ниже 17 — установи:
 
@@ -20,11 +20,11 @@ java -version
 # Установи Homebrew если нет:
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-# Установи Java 17:
-brew install openjdk@17
+# Установи Java 21 (LTS):
+brew install openjdk@21
 
-# Добавь в PATH (вставь в терминал и нажми Enter):
-echo 'export PATH="/opt/homebrew/opt/openjdk@17/bin:$PATH"' >> ~/.zshrc
+# Добавь в PATH:
+echo 'export PATH="/opt/homebrew/opt/openjdk@21/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 
 # Проверь:
@@ -168,7 +168,7 @@ cd ~/Desktop/lab_jav26/4lab_java
 javac *.java
 ```
 
-Теперь нужно открыть **3 окна терминала**. В VS Code: Terminal → New Terminal (или `Cmd+Shift+5` чтобы разделить).
+Теперь нужно открыть **3 окна терминала**. В VS Code: Terminal → New Terminal (или `Cmd+\` чтобы разделить экран, или кнопка `+` рядом с названием терминала).
 
 **Терминал 1 — сервер (запускай первым):**
 ```bash
@@ -225,11 +225,8 @@ String url = "jdbc:sqlite:" + System.getProperty("user.dir") + "/store.db";
 ```bash
 cd ~/Desktop/lab_jav26/JavaStoreProject
 
-# Первый раз скачает sqlite-jdbc драйвер:
-mvn compile
-
-# Запусти:
-mvn exec:java -Dexec.mainClass="com.example.App"
+# Скомпилируй и запусти (скачает sqlite-jdbc при первом запуске):
+mvn compile exec:java -Dexec.mainClass="com.example.App"
 ```
 
 Должен появиться вывод с количеством упаковок творога.

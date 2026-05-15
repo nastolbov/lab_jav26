@@ -251,17 +251,17 @@ private void appendMessage(String msg) {
 ## Как запустить
 
 ```bash
-# Терминал 1 — сервер
-cd 4lab_java
-javac ChatServer.java
+# Шаг 1 — сначала скомпилируй все файлы разом (один раз):
+cd ~/Desktop/lab_jav26/4lab_java
+javac *.java
+
+# Терминал 1 — запускай первым, иначе клиенты упадут:
 java ChatServer
 
-# Терминал 2 — GUI клиент
-javac ChatClientGUI.java
+# Терминал 2 — GUI клиент (откроется окно Swing):
 java ChatClientGUI
 
-# Терминал 3 — ещё один клиент (консольный)
-javac ChatClient.java
+# Терминал 3 — консольный клиент (второй пользователь):
 java ChatClient
 ```
 

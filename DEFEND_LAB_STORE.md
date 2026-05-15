@@ -220,19 +220,18 @@ System.out.printf("Увеличение запаса Творог 9%% жирно
 ## Как запустить
 
 ```bash
-cd JavaStoreProject
-mvn compile exec:java    # если в pom.xml настроен exec-maven-plugin
-# или
-javac -cp sqlite-jdbc.jar src/main/java/com/example/App.java
-java  -cp sqlite-jdbc.jar:. com.example.App
+cd ~/Desktop/lab_jav26/JavaStoreProject
+
+# Сначала исправь путь к БД в App.java (см. HOW_TO_RUN.md), потом:
+mvn compile exec:java -Dexec.mainClass="com.example.App"
 ```
 
-В `pom.xml` должна быть зависимость на SQLite-драйвер:
+SQLite-драйвер уже прописан в `pom.xml` и скачается автоматически:
 ```xml
 <dependency>
     <groupId>org.xerial</groupId>
     <artifactId>sqlite-jdbc</artifactId>
-    <version>3.43.0.0</version>
+    <version>3.46.0.0</version>
 </dependency>
 ```
 

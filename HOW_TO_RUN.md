@@ -121,7 +121,7 @@ Started Application in 12.3 seconds
 
 Затем открой браузер и перейди по адресу:
 ```
-http://localhost:8080
+http://localhost:8083
 ```
 
 Чтобы остановить — нажми `Ctrl+C` в терминале.
@@ -135,12 +135,10 @@ cd ~/Desktop/lab_jav26/lab4
 mvn spring-boot:run
 ```
 
-Когда запустится, открой:
+Когда в терминале появится `Started Application` — открой браузер:
 ```
-http://localhost:8080
+http://localhost:8084
 ```
-
-> **Важно:** если лаба 3 уже запущена — они займут один порт и будет конфликт. Сначала останови лабу 3 (`Ctrl+C`), потом запускай лабу 4. Или запускай каждую в отдельном окне терминала.
 
 ---
 
@@ -151,9 +149,9 @@ cd ~/Desktop/lab_jav26/lab5
 mvn spring-boot:run
 ```
 
-Открой браузер:
+Когда в терминале появится `Started Application` — открой браузер:
 ```
-http://localhost:8080
+http://localhost:8085
 ```
 
 ---
@@ -255,11 +253,11 @@ mvn exec:java -Dexec.mainClass="com.example.App"
 
 ## Типичные проблемы и решения
 
-### «Port 8080 already in use»
-Уже запущено одно Vaadin-приложение. Останови его `Ctrl+C` или:
+### «Port already in use»
+Уже запущено одно Vaadin-приложение на этом порту. Останови его `Ctrl+C` или:
 ```bash
-# Найти что занимает порт и убить:
-lsof -i :8080 | grep LISTEN
+# Найти что занимает нужный порт (замени 8084 на нужный) и убить:
+lsof -i :8084 | grep LISTEN
 kill -9 <PID из вывода>
 ```
 

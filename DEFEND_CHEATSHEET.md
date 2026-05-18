@@ -8,6 +8,8 @@
 | Лаба 3 | Абстрактные классы / Интерфейсы | [→](#лаба-3--абстрактные-классы) |
 | Лаба 4 | Текстовые файлы / Исключения | [→](#лаба-4--текстовые-файлы) |
 | Лаба 5 | Бинарные файлы | [→](#лаба-5--бинарные-файлы) |
+| Чат | Сокеты / Потоки / Swing | [→](#лаба-чат--сокеты) |
+| Магазин | JDBC / SQLite | [→](#лаба-магазин--jdbc) |
 
 ---
 
@@ -920,3 +922,804 @@ resultBox.setValue(result.stream()
 **Как работает allDigitsOdd?** `% 10` — последняя цифра. `/ 10` — убираем цифру. Повторяем до нуля.
 
 **Нарушает ли readAll() требование задания?** Нет — readAll() только для отображения в UI. Обработка (поиск чисел с нечётными цифрами) выполняется в oddDigitNumbers() без массива.
+
+---
+
+# Лаба 5 — Подробный разбор кода
+
+**Навигация:** [create](#create--запись-файла) · [readAll](#readall--для-отображения) · [oddDigitNumbers](#odddigitnumbers--главная-задача) · [allDigitsOdd](#alldigitsodd--проверка-цифр) · [MainView](#mainview-лаба-5-подробно) · [↑ Наверх](#навигация)
+
+---
+
+## create() — запись файла
+
+**Файл:** `BinaryFileService.java`, строки 30-47
+
+```java
+public void create(Path file, int maxCount, int a, int b) throws IOException {
+    if (maxCount < 1)
+        throw new IllegalArgumentException("n должно быть >= 1");
+    if (a > b)
+        throw new IllegalArgumentException("должно быть a <= b");
+
+    Random rnd  = new Random();
+    int    size = 1 + rnd.nextInt(maxCount); // случайное количество 1..n
+
+    Files.createDirectories(file.toAbsolutePath().getParent()); // создать папку data/
+    try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(file))) {
+        for (int i = 0; i < size; i++) {
+            int v = a + rnd.nextInt(b - a + 1); // случайное число в диапазоне a..b
+            out.writeInt(v);                     // записать ровно 4 байта
+        }
+    }
+}
+```
+
+**Строки 31-34 — проверка параметров:**
+Перед записью проверяем что параметры логичные. Если `n < 1` или `a > b` — бросаем `IllegalArgumentException` (unchecked, не нужно объявлять throws). Это ошибка вызывающего кода, не файловой системы.
+
+**Строка 37 — случайное количество:**
+```
+rnd.nextInt(20) → 0..19
+1 + 0..19       → 1..20
+```
+Добавляем 1 потому что `nextInt(n)` возвращает 0..n-1. Нам нужно хотя бы одно число.
+
+**Строка 39 — создание папки:**
+`Files.createDirectories()` — создаёт `data/` если не существует. Без этого `Files.newOutputStream("data/numbers.bin")` упадёт — папки нет.
+
+**Строка 40 — цепочка обёрток:**
+```
+Files.newOutputStream(file)  — байтовый поток в файл
+    DataOutputStream          — добавляет writeInt(), writeDouble() и т.д.
+```
+
+**Строка 44 — как writeInt работает:**
+```
+out.writeInt(45)
+→ число 45 в двоичном: 00000000 00000000 00000000 00101101
+→ записывает в файл 4 байта: 00 00 00 2D
+```
+Каждое число — ровно 4 байта. 20 чисел = 80 байт.
+
+---
+
+## readAll() — для отображения
+
+**Файл:** `BinaryFileService.java`, строки 50-62
+
+```java
+public int[] readAll(Path file) throws IOException {
+    long bytes = Files.size(file);              // размер файла в байтах
+    if (bytes % Integer.BYTES != 0) {           // Integer.BYTES = 4
+        throw new IOException("Размер файла не кратен 4");
+    }
+    int[] result = new int[(int)(bytes / Integer.BYTES)]; // сколько чисел
+    try (DataInputStream in = new DataInputStream(Files.newInputStream(file))) {
+        for (int i = 0; i < result.length; i++) {
+            result[i] = in.readInt(); // читает 4 байта → int
+        }
+    }
+    return result;
+}
+```
+
+**Строки 51-53 — как узнать сколько чисел:**
+Файл 80 байт / 4 = 20 чисел. Если 81 байт — файл битый (не кратен 4), бросаем IOException.
+
+**Зачем этот метод:** только для показа содержимого файла в `contentBox`. Не нарушает задание — для обработки используется `oddDigitNumbers()`.
+
+---
+
+## oddDigitNumbers() — главная задача
+
+**Файл:** `BinaryFileService.java`, строки 70-86
+
+```java
+public TreeSet<Integer> oddDigitNumbers(Path file) throws IOException {
+    TreeSet<Integer> result = new TreeSet<>();   // сортировка + без дубликатов
+    try (DataInputStream in = new DataInputStream(Files.newInputStream(file))) {
+        while (true) {
+            int v;
+            try {
+                v = in.readInt();           // читаем одно число
+            } catch (EOFException eof) {
+                break;                      // файл кончился — выходим
+            }
+            if (allDigitsOdd(v)) {
+                result.add(v);             // только подходящие в TreeSet
+            }
+        }
+    }
+    return result;
+}
+```
+
+**Почему `while(true)` а не `while(есть данные)`:**
+`DataInputStream` не умеет заранее сказать "есть ли ещё байты". Единственный способ узнать — попробовать прочитать. Если файл кончился — `readInt()` бросит `EOFException`. Ловим и выходим.
+
+**Почему два вложенных try:**
+- Внешний `try-with-resources` — закрыть `DataInputStream` после работы
+- Внутренний `try-catch` — поймать `EOFException` для выхода из цикла
+
+Если написать `catch(EOFException)` в внешнем try — он закроет поток и выбросит исключение наружу. Нам нужно поймать его внутри цикла и спокойно выйти.
+
+**Пример работы:**
+```
+Файл: [13][30][31][15][13]
+readInt() = 13 → allDigitsOdd(13) = true  → result = {13}
+readInt() = 30 → allDigitsOdd(30) = false → пропускаем (цифра 0 — чётная)
+readInt() = 31 → allDigitsOdd(31) = true  → result = {13, 31}
+readInt() = 15 → allDigitsOdd(15) = true  → result = {13, 15, 31}  ← TreeSet отсортировал
+readInt() = 13 → allDigitsOdd(13) = true  → result.add(13) → дубликат, TreeSet проигнорировал
+readInt()     → EOFException → break
+Возвращаем: {13, 15, 31}
+```
+
+---
+
+## allDigitsOdd() — проверка цифр
+
+**Файл:** `BinaryFileService.java`, строки 89-98
+
+```java
+static boolean allDigitsOdd(int n) {
+    if (n == 0) return false;            // 0 — чётная цифра
+    long x = Math.abs((long) n);         // берём абсолют (для отрицательных)
+    while (x > 0) {
+        int d = (int)(x % 10);           // последняя цифра
+        if ((d & 1) == 0) return false;  // чётная → сразу false
+        x /= 10;                         // убираем цифру
+    }
+    return true;
+}
+```
+
+**Как работает `% 10` и `/ 10` — разбор числа 135:**
+```
+x = 135
+Итерация 1: d = 135 % 10 = 5  → нечётная (5 & 1 = 1) → продолжаем
+            x = 135 / 10 = 13
+Итерация 2: d = 13 % 10  = 3  → нечётная (3 & 1 = 1) → продолжаем
+            x = 13 / 10  = 1
+Итерация 3: d = 1 % 10   = 1  → нечётная (1 & 1 = 1) → продолжаем
+            x = 1 / 10   = 0
+Цикл: x = 0, выходим → return true ✅
+```
+
+**Разбор числа 132:**
+```
+x = 132
+Итерация 1: d = 132 % 10 = 2  → чётная (2 & 1 = 0) → return false ❌ (сразу)
+```
+
+**Зачем `(long) n` при Math.abs:**
+`Integer.MIN_VALUE` = -2147483648. `Math.abs(-2147483648)` в типе int = переполнение (нет такого положительного числа в int). Приводим к `long` — там хватает места.
+
+**Зачем `(d & 1) == 0` а не `d % 2 == 0`:**
+Побитовая операция быстрее деления. У нечётных чисел последний бит = 1, у чётных = 0.
+```
+5 = 101 в двоичном → 5 & 1 = 1 → нечётное
+4 = 100 в двоичном → 4 & 1 = 0 → чётное
+```
+
+---
+
+## MainView (Лаба 5 подробно)
+
+**Файл:** `MainView.java`
+
+### Поля класса — строки 41-47
+
+```java
+private final BinaryFileService service = new BinaryFileService(); // логика работы с файлом
+private Path     currentFile;            // путь к текущему файлу (null если не выбран)
+private final Paragraph fileLabel;       // показывает путь к файлу
+private final TextArea  contentBox;      // показывает все числа из файла
+private final TextArea  resultBox;       // показывает результат обработки
+```
+
+### openCreateDialog() — строки 75-121
+
+```java
+Dialog dlg = new Dialog();               // всплывающее окно
+IntegerField n = new IntegerField(...);  // поле только для целых чисел
+n.setValue(20);
+n.setMin(1);                             // нельзя ввести < 1
+```
+
+При нажатии "Создать":
+```java
+service.create(p, n.getValue(), a.getValue(), b.getValue()); // создаём файл
+currentFile = p;                          // запоминаем путь
+showContent();                            // показываем содержимое в contentBox
+```
+
+Три catch — три разных ошибки:
+- `IllegalArgumentException` — неверные параметры (a > b, n < 1)
+- `IOException` — ошибка записи файла
+- `Exception` — всё непредвиденное
+
+### showContent() — строки 153-161
+
+```java
+private void showContent() throws IOException {
+    int[] all = service.readAll(currentFile);
+    StringBuilder sb = new StringBuilder("Всего чисел: ").append(all.length).append('\n');
+    for (int i = 0; i < all.length; i++) {
+        if (i > 0) sb.append(' ');
+        sb.append(all[i]);
+    }
+    contentBox.setValue(sb.toString());
+}
+```
+
+Читает ВСЕ числа (через readAll) и показывает в `contentBox`. Это не обработка — просто отображение.
+
+### process() — строки 164-183
+
+```java
+TreeSet<Integer> result = service.oddDigitNumbers(currentFile);
+if (result.isEmpty()) {
+    resultBox.setValue("Нет чисел, состоящих только из нечётных цифр");
+} else {
+    resultBox.setValue(result.stream()
+        .map(String::valueOf)           // Integer → String: 13 → "13"
+        .collect(Collectors.joining(" "))); // ["13","15","31"] → "13 15 31"
+}
+```
+
+`result.stream()` — создаём поток из TreeSet. Элементы уже отсортированы.
+`map(String::valueOf)` — каждое число превращаем в строку.
+`Collectors.joining(" ")` — соединяем через пробел в одну строку.
+
+---
+
+# Лаба Чат — Сокеты
+
+**Навигация:** [Суть](#суть-чат) · [Запуск](#запуск-чат) · [Что показывать](#что-показывать-чат) · [ChatServer](#chatserver-подробно) · [ChatClient](#chatclient-подробно) · [ChatClientGUI](#chatclientgui-подробно) · [Вопросы](#вопросы-чат) · [↑ Наверх](#навигация)
+
+---
+
+## Суть-чат
+
+**Для чего лаба:** показать как две программы общаются по сети через сокеты, и почему для этого нужна многопоточность.
+
+**Сокет** — это "труба" между двумя программами. Один пишет в трубу — второй читает.
+
+```
+ChatClientGUI ←——сокет——→ ChatServer ←——сокет——→ ChatClient
+порт случайный             порт 8088              порт случайный
+```
+
+**Три файла:**
+- `ChatServer.java` — сервер, принимает подключения, рассылает сообщения всем
+- `ChatClient.java` — консольный клиент (терминал)
+- `ChatClientGUI.java` — клиент с окном Swing
+
+---
+
+## Запуск-чат
+
+```bash
+cd ~/Desktop/lab_jav26/4lab_java
+javac *.java   # компилируем все файлы разом
+```
+
+Нужно 3 терминала:
+```bash
+# Терминал 1 — ПЕРВЫМ
+java ChatServer
+
+# Терминал 2
+java ChatClientGUI
+
+# Терминал 3
+java ChatClient
+```
+
+---
+
+## Что показывать-чат
+
+1. Сервер запустился → "Чат-сервер запущен на порту 8088"
+2. GUI клиент → ввёл имя "Никита" → окно открылось
+3. Консольный клиент → ввёл имя "Иван"
+4. Пишешь из GUI → сообщение появляется у "Ивана"
+5. Пишешь из консоли → появляется в GUI
+6. Закрываешь GUI → в консоли "Никита покинул чат"
+
+---
+
+## ChatServer подробно
+
+**Файл:** `ChatServer.java`
+
+### Поля — строки 7-8
+
+```java
+private static final int PORT = 8088;
+private static List<ClientHandler> clients = new CopyOnWriteArrayList<>();
+```
+
+`PORT = 8088` — порт на котором сервер слушает. Можно любой свободный от 1024 до 65535.
+
+`CopyOnWriteArrayList` — особый список. Несколько потоков (по одному на клиента) одновременно могут вызывать `add()` и `remove()`. Обычный `ArrayList` при этом сломается — данные перепутаются. `CopyOnWriteArrayList` при каждом изменении создаёт копию массива внутри — безопасно.
+
+### main() — главный цикл (строки 10-25)
+
+```java
+try (ServerSocket serverSocket = new ServerSocket(PORT)) {
+    System.out.println("✅ Чат-сервер запущен на порту " + PORT);
+
+    while (true) {
+        Socket clientSocket = serverSocket.accept(); // БЛОКИРУЕТСЯ — ждёт клиента
+        ClientHandler handler = new ClientHandler(clientSocket);
+        clients.add(handler);
+        new Thread(handler).start(); // новый поток для этого клиента
+    }
+}
+```
+
+**Строка 11 — ServerSocket:**
+`new ServerSocket(8088)` — сервер начинает слушать порт 8088. Это как "поднять трубку телефона" в ожидании звонка.
+
+**Строка 15 — accept():**
+`serverSocket.accept()` — БЛОКИРУЕТСЯ. Поток засыпает и ждёт пока клиент не подключится. Как только клиент подключился — возвращает `Socket` и продолжается.
+
+**Строка 18-20 — новый поток:**
+Почему `new Thread(handler).start()`? Потому что после принятия клиента сервер должен сразу вернуться к `accept()` и принять следующего. Если обслуживать клиента в главном потоке — второй клиент не сможет подключиться пока первый не отключится.
+
+### broadcastMessage() — строки 28-34
+
+```java
+public static void broadcastMessage(String message, ClientHandler sender) {
+    for (ClientHandler client : clients) {
+        if (client != sender) {     // пропускаем автора
+            client.sendMessage(message);
+        }
+    }
+}
+```
+
+Проходим по всем подключённым клиентам и отправляем каждому кроме автора. `client != sender` — сравниваем **ссылки** (тот же объект в памяти), а не данные через equals().
+
+### ClientHandler — внутренний класс (строки 53-110)
+
+```java
+static class ClientHandler implements Runnable {
+    private Socket socket;
+    private BufferedReader in;   // читаем от клиента
+    private PrintWriter out;     // пишем клиенту
+    private String username;
+```
+
+`implements Runnable` — говорит Java: этот класс можно запустить в потоке. Метод `run()` выполнится в отдельном потоке.
+
+### run() — строки 64-101
+
+```java
+// Шаг 1: оборачиваем сокет в удобные потоки
+in  = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+out = new PrintWriter(socket.getOutputStream(), true); // true = autoFlush
+
+// Шаг 2: первая строка от клиента = имя
+username = in.readLine();
+
+// Шаг 3: уведомить всех
+broadcastMessage("📢 " + username + " присоединился!", this);
+
+// Шаг 4: читаем сообщения в цикле
+String message;
+while ((message = in.readLine()) != null) {
+    if (message.equals("/exit")) break;
+    broadcastMessage("[" + username + "]: " + message, this);
+}
+```
+
+**Строка 67 — autoFlush:**
+`new PrintWriter(stream, true)` — `true` означает что после каждого `println()` данные сразу отправляются по сети. Без этого сообщения накапливаются в буфере и могут не дойти.
+
+**Строка 81 — readLine() блокирует:**
+Поток спит пока клиент не пришлёт строку. Когда пришла — обрабатываем и снова спим. Это "блокирующий I/O". Именно поэтому каждый клиент в своём потоке — иначе ожидание одного блокировало бы всех.
+
+**Строки 92-100 — finally:**
+```java
+finally {
+    socket.close();
+    removeClient(this);
+    broadcastMessage("📢 " + username + " покинул чат.", this);
+}
+```
+`finally` выполняется **всегда** — и при нормальном `/exit`, и при аварийном отключении (IOException). Гарантирует что сокет закроется и клиент удалится из списка.
+
+---
+
+## ChatClient подробно
+
+**Файл:** `ChatClient.java`
+
+### Подключение — строки 9-15
+
+```java
+try (Socket socket = new Socket(SERVER_IP, PORT)) {
+    BufferedReader in  = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+    PrintWriter    out = new PrintWriter(socket.getOutputStream(), true);
+    Scanner scanner = new Scanner(System.in);
+```
+
+`new Socket("localhost", 8088)` — подключаемся к серверу. Если сервер не запущен — сразу IOException.
+
+`try-with-resources` на Socket — закроется автоматически.
+
+### Отправка имени — строка 21
+
+```java
+out.println(username); // первая строка = имя (протокол с сервером)
+```
+
+Это **соглашение** (протокол): сервер ждёт имя первой строкой. Потом всё остальное — сообщения.
+
+### Два потока — строки 23-39
+
+```java
+// Поток 1 — читает входящие сообщения от сервера
+Thread readThread = new Thread(() -> {
+    String message;
+    while ((message = in.readLine()) != null) {
+        System.out.println(message);  // печатаем в консоль
+    }
+});
+readThread.start();
+
+// Главный поток — ждёт ввода пользователя
+while (true) {
+    String input = scanner.nextLine(); // БЛОКИРУЕТ — ждёт ввода
+    if ("/exit".equals(input)) break;
+    out.println(input);                // отправляем на сервер
+}
+```
+
+**Почему два потока:**
+- `scanner.nextLine()` блокирует главный поток — ждёт пока ты напечатаешь
+- `in.readLine()` тоже блокирует — ждёт сообщения от сервера
+- Один поток не может делать два блокирующих ожидания одновременно
+- Решение: `readThread` слушает сервер, главный поток слушает клавиатуру — параллельно
+
+---
+
+## ChatClientGUI подробно
+
+**Файл:** `ChatClientGUI.java`
+
+### Поля класса — строки 8-13
+
+```java
+private JTextArea chatArea;       // область чата — только чтение
+private JTextField messageField;  // строка ввода сообщения
+private PrintWriter out;          // отправка на сервер
+private BufferedReader in;        // получение от сервера
+private Socket socket;            // само соединение
+private String username;          // имя пользователя
+```
+
+### Конструктор — строки 15-58
+
+**Строка 17 — ввод имени:**
+```java
+username = JOptionPane.showInputDialog(this, "Введите ваше имя:", ...);
+```
+`JOptionPane` — стандартное диалоговое окно Swing. Блокирует пока не введёшь имя и не нажмёшь OK.
+
+**Строка 25 — почему DO_NOTHING_ON_CLOSE:**
+```java
+setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+```
+Если `EXIT_ON_CLOSE` — программа закрывается мгновенно, сервер не узнает что клиент ушёл. Мы сами обрабатываем закрытие через `exitGracefully()`.
+
+**Строки 28-33 — область чата:**
+```java
+chatArea = new JTextArea();
+chatArea.setEditable(false);              // нельзя редактировать
+add(new JScrollPane(chatArea), BorderLayout.CENTER); // прокрутка + в центр
+```
+
+**Строки 35-44 — поле ввода:**
+```java
+sendBtn.addActionListener(e -> sendMessage());    // клик кнопки → отправить
+messageField.addActionListener(e -> sendMessage()); // Enter → отправить
+```
+
+### connectToServer() — строки 60-92
+
+```java
+socket = new Socket("127.0.0.1", 8088);
+out = new PrintWriter(socket.getOutputStream(), true);
+in  = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+out.println(username); // отправляем имя первым
+```
+
+**Строки 70-81 — поток чтения входящих:**
+```java
+Thread readerThread = new Thread(() -> {
+    String msg;
+    while ((msg = in.readLine()) != null) {
+        appendMessage(msg); // нельзя напрямую — нужно через EDT
+    }
+});
+readerThread.start();
+```
+
+Отдельный поток потому что `in.readLine()` блокирует. Без него окно зависло бы.
+
+### sendMessage() — строки 94-104
+
+```java
+out.println(text);                          // отправляем на сервер
+appendMessage("[" + username + "]: " + text); // показываем себе локально
+messageField.setText("");                   // очищаем поле
+```
+
+Своё сообщение показываем **локально сами** — сервер его нам не возвращает (проверка `client != sender` в broadcastMessage).
+
+### exitGracefully() — строки 106-112
+
+```java
+if (out != null) out.println("/exit"); // сообщаем серверу
+if (socket != null) socket.close();    // закрываем соединение
+System.exit(0);                        // закрываем программу
+```
+
+Сервер получает `/exit` → выходит из цикла → `finally` → удаляет клиента → сообщает всем "покинул чат".
+
+### appendMessage() — строки 114-118
+
+```java
+private void appendMessage(String msg) {
+    SwingUtilities.invokeLater(() -> {
+        chatArea.append(msg + "\n");
+        chatArea.setCaretPosition(chatArea.getDocument().getLength()); // скролл вниз
+    });
+}
+```
+
+**Почему invokeLater:**
+Правило Swing — UI можно менять **только из EDT** (Event Dispatch Thread). `readerThread` — другой поток. Прямой вызов `chatArea.append()` из него = гонка данных = зависание. `invokeLater` ставит задачу в очередь EDT — безопасно.
+
+---
+
+## Вопросы-чат
+
+**Что такое сокет?** Двухсторонний канал связи между программами. ServerSocket слушает порт, Socket — сам канал. Данные через InputStream/OutputStream.
+
+**Что такое порт?** Число 0-65535. Один компьютер — много программ, каждая на своём порту. 8088 — произвольный выбор.
+
+**Зачем многопоточность на сервере?** readLine() блокирует поток. Без потоков — обслуживали бы одного клиента, остальные ждали. Каждый клиент в своём Thread — параллельно.
+
+**Что такое CopyOnWriteArrayList?** Потокобезопасный список. При изменении создаёт копию массива. Нужен когда несколько потоков одновременно меняют список клиентов.
+
+**Что такое Runnable?** Интерфейс с методом run(). Описывает задачу для потока. `new Thread(handler).start()` запускает run() в новом потоке.
+
+**Что происходит при аварийном отключении?** readLine() бросает IOException. finally выполняется всегда — закрывает сокет, удаляет из clients, уведомляет остальных.
+
+**Зачем autoFlush?** `new PrintWriter(out, true)` — после каждого println данные сразу отправляются. Без этого зависают в буфере.
+
+**Что такое EDT?** Event Dispatch Thread — единственный поток с правом изменять Swing компоненты. invokeLater() ставит задачу в очередь EDT.
+
+**Зачем два потока в клиенте?** scanner.nextLine() и in.readLine() оба блокируют. Один поток не делает два ожидания одновременно.
+
+**Почему client != sender а не equals?** Нам важно что это тот же объект в памяти. != сравнивает адреса, equals — данные.
+
+---
+
+# Лаба Магазин — JDBC
+
+**Навигация:** [Суть](#суть-магазин) · [Запуск](#запуск-магазин) · [Что показывать](#что-показывать-магазин) · [Подключение](#подключение-к-бд) · [SQL-запрос](#sql-запрос-разбор) · [Вычисление](#вычисление-результата) · [Вопросы](#вопросы-магазин) · [↑ Наверх](#навигация)
+
+---
+
+## Суть-магазин
+
+**Для чего лаба:** показать как Java работает с базой данных через JDBC. Программа подключается к SQLite-базе, выполняет SQL-запрос с несколькими таблицами, получает результат и вычисляет прирост запаса товара в килограммах.
+
+**Один файл:** `App.java` — всё в main().
+
+**База данных:** три таблицы
+```
+product (товары)           movement (операции)         store (магазины)
+article_id (PK) ←───────── article_id (FK)             store_id (PK)
+name                       store_id   (FK) ────────────→ district
+unit                       operation_type
+pack_quantity              pack_count
+```
+
+---
+
+## Запуск-магазин
+
+```bash
+cd ~/Desktop/Java_LAb3/JavaStoreProject
+mvn compile exec:java -Dexec.mainClass="com.example.App"
+```
+
+Если путь к базе не работает — исправить в `App.java:11`:
+```java
+String url = "jdbc:sqlite:" + System.getProperty("user.dir") + "/store.db";
+```
+
+---
+
+## Что показывать-магазин
+
+1. Программа запустилась, вывела числа
+2. Объясняешь: подключилась к SQLite, выполнила SQL-запрос
+3. Посчитала поступления минус продажи, перевела в кг
+
+---
+
+## Подключение к БД
+
+**Файл:** `App.java`
+
+**Строка 11 — URL подключения:**
+```java
+String url = "jdbc:sqlite:/Users/nikita/Desktop/Java_LAb3/JavaStoreProject/store.db";
+```
+Формат: `jdbc:<тип>:<параметры>`. По префиксу `jdbc:sqlite:` Java автоматически находит нужный драйвер (из pom.xml).
+
+**Строка 21 — открытие соединения:**
+```java
+try (Connection conn = DriverManager.getConnection(url)) {
+```
+`DriverManager.getConnection()` — открывает соединение с базой. `try-with-resources` — соединение закроется автоматически. Незакрытое соединение = утечка ресурсов.
+
+**Строки 34-35 — выполнение запроса:**
+```java
+try (Statement st = conn.createStatement();
+     ResultSet rs = st.executeQuery(sql)) {
+```
+`Statement` — объект для выполнения SQL. `executeQuery()` — выполняет SELECT, возвращает `ResultSet`.
+
+**Строка 37 — чтение результата:**
+```java
+if (rs.next()) {
+```
+`ResultSet` — курсор на результат. Изначально стоит **перед** первой строкой. `rs.next()` двигает на следующую. Наш запрос с SUM возвращает одну строку — поэтому `if`, а не `while`.
+
+---
+
+## SQL-запрос разбор
+
+**Строки 22-32:**
+
+```sql
+SELECT
+  SUM(CASE WHEN m.operation_type = 'Поступление' THEN m.pack_count ELSE 0 END) AS in_packs,
+  SUM(CASE WHEN m.operation_type = 'Продажа'     THEN m.pack_count ELSE 0 END) AS out_packs,
+  p.unit,
+  p.pack_quantity
+FROM movement m
+JOIN product p ON m.article_id = p.article_id
+JOIN store   s ON m.store_id   = s.store_id
+WHERE p.name     = 'Творог 9% жирности'
+  AND s.district = 'Заречный';
+```
+
+### FROM + JOIN (строки 28-30)
+
+```sql
+FROM movement m
+JOIN product p ON m.article_id = p.article_id
+JOIN store   s ON m.store_id   = s.store_id
+```
+
+`JOIN` — соединение таблиц по ключу. Каждая строка `movement` получает данные из `product` и `store`.
+
+До JOIN: три отдельные таблицы. После JOIN — одна "виртуальная" строка с полями из всех трёх.
+
+Пример:
+```
+movement: article_id=5, store_id=3, operation_type='Продажа', pack_count=10
++ product: name='Творог 9%', unit='кг', pack_quantity=0.5
++ store:   district='Заречный'
+= одна строка со всеми полями
+```
+
+### WHERE (строки 31-32)
+
+```sql
+WHERE p.name = 'Творог 9% жирности' AND s.district = 'Заречный'
+```
+
+Оставляем только строки про нужный товар в нужном районе.
+
+### CASE WHEN + SUM (строки 23-25)
+
+```sql
+SUM(CASE WHEN m.operation_type = 'Поступление' THEN m.pack_count ELSE 0 END) AS in_packs
+```
+
+Условная сумма: для каждой строки — если поступление берём pack_count, иначе 0. SUM складывает всё.
+
+```
+Строка 1: Поступление, 100 → CASE = 100
+Строка 2: Продажа,      30 → CASE = 0
+Строка 3: Поступление,  50 → CASE = 50
+SUM = 150 → in_packs = 150
+```
+
+Аналогично `out_packs` — суммируем только Продажи.
+
+### p.unit и p.pack_quantity (строки 26-27)
+
+Тянем из таблицы `product` единицу измерения ("кг" или "г") и вес одной упаковки. Нужны для перевода упаковок в килограммы.
+
+---
+
+## Вычисление результата
+
+**Строки 40-58:**
+
+```java
+inPacks  = rs.getInt("in_packs");    // сколько упаковок поступило
+outPacks = rs.getInt("out_packs");   // сколько продано
+unit     = rs.getString("unit");     // "кг" или "г"
+
+String packQtyStr = rs.getString("pack_quantity");
+packQtyStr = packQtyStr.replace(',', '.'); // "0,5" → "0.5" (европейский формат)
+packQty = Double.parseDouble(packQtyStr);
+
+int netPacks = inPacks - outPacks;   // прирост в упаковках
+
+if ("кг".equals(unit)) {
+    packKg = packQty;                // уже в кг
+} else if ("г".equals(unit)) {
+    packKg = packQty / 1000.0;       // граммы → килограммы
+}
+
+netKg = netPacks * packKg;           // прирост в кг
+```
+
+**Строка 46 — замена запятой:**
+В базе число может быть записано как `"0,5"` (европейский формат). `Double.parseDouble` понимает только точку — заменяем.
+
+**Строки 52-56 — почему `"кг".equals(unit)` а не `unit.equals("кг")`:**
+Если `unit == null` и написать `unit.equals("кг")` → `NullPointerException`. `"кг".equals(null)` просто вернёт false. Стандартная защита от NPE.
+
+**Строка 73 — вывод результата:**
+```java
+System.out.printf("Увеличение запаса Творог 9%% жирности в Заречном районе (кг): %.1f%n", netKg);
+```
+`%%` — экранированный знак процента (один `%` начинает спецификатор формата). `%.1f` — число с одним знаком после запятой.
+
+**Строки 66-68 — флаг hasData:**
+```java
+if (!hasData) {
+    System.out.println("Данных по товару нет.");
+}
+```
+Если `rs.next()` вернул false — данных нет совсем. Переменные остались нулями — вывод "0 кг" был бы неинформативным. Флаг `hasData` позволяет различить "нулевой результат" от "данных нет".
+
+---
+
+## Вопросы-магазин
+
+**Что такое JDBC?** Java Database Connectivity — стандартный API для баз данных. Один код работает с любой БД — меняешь только драйвер и строку подключения.
+
+**Что такое SQLite?** База данных в одном файле без отдельного сервера. Идеально для учебных задач.
+
+**Три главных класса JDBC?** Connection — соединение. Statement — выполнение SQL. ResultSet — результат (строки таблицы).
+
+**Зачем try-with-resources для Connection?** Незакрытое соединение = утечка ресурсов. try-with-resources гарантирует close() даже при ошибке.
+
+**Что такое JOIN?** Соединение таблиц по ключу. Строки объединяются там где совпадают значения ключей.
+
+**Что делает CASE WHEN?** Условное выражение: если условие → одно значение, иначе → другое. С SUM даёт условную агрегацию.
+
+**Что такое ResultSet?** Курсор. rs.next() переходит к следующей строке. rs.getInt()/rs.getString() читают значения.
+
+**Чем PreparedStatement отличается от Statement?** Statement — статический запрос. PreparedStatement — с параметрами (`WHERE name = ?`). Защита от SQL-инъекций.
+
+**Что такое SQL-инъекция?** Злоумышленник вводит в поле `'; DROP TABLE product; --` и удаляет таблицу. PreparedStatement параметры не интерпретирует как SQL.
+
+**Почему `"кг".equals(unit)` а не наоборот?** Защита от NPE: если unit == null, `unit.equals("кг")` упадёт. `"кг".equals(null)` вернёт false.

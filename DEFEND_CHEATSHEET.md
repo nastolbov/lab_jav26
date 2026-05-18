@@ -355,120 +355,262 @@ mvn spring-boot:run
 
 ## Внутрянка-3
 
-### Цепочка классов — как данные проходят
+### Цепочка — как данные идут от файла до экрана
 
 ```
-stations.txt
-    ↓
-StationReader.readClassic()  или  StationReader.readFunctional()
-    ↓ (для каждой строки)
-StationParser.parse(line)
-    ↓
-new Station(name, passenger, cargo)
-    ↓
-List<Station>
-    ↓
+stations.txt (текстовый файл на диске)
+      ↓
+StationReader.readClassic()  ИЛИ  StationReader.readFunctional()
+      ↓ для каждой строки вызывает:
+StationParser.parse("Минск               45 60")
+      ↓
+new Station("Минск", 45, 60)
+      ↓
+List<Station> — список всех станций
+      ↓
 grid.setItems(data) → таблица в браузере
 ```
 
-### Почему три обёртки при чтении файла
+---
+
+### Чтение способ 1 — BufferedReader (классический)
 
 ```java
-new BufferedReader(new FileReader(path.toFile()))
-```
-
-```
-Файл на диске → байты
-    FileReader          байты → символы (учитывает кодировку UTF-8)
-        BufferedReader  символы → строки + буфер 8192 символа
-            .readLine() → "Минск               45 60"
-```
-
-Без BufferedReader каждый символ = обращение к диску. С буфером — загружается блок сразу, потом берём из памяти. Быстро.
-
-### try-with-resources — почему важно
-
-```java
-// БЕЗ — опасно:
-BufferedReader br = new BufferedReader(new FileReader(path.toFile()));
-// ... если здесь исключение — br.close() никогда не вызовется
-br.close(); // файл навсегда занят
-
-// С try-with-resources — всегда закроется:
 try (BufferedReader br = new BufferedReader(new FileReader(path.toFile()))) {
-    // ... даже если исключение — close() вызовется автоматически
+    String line;
+    while ((line = br.readLine()) != null) {  // null = файл кончился
+        if (line.isBlank()) continue;         // пропускаем пустые строки
+        result.add(StationParser.parse(line));
+    }
 }
 ```
 
-### StationParser — два режима разбора строки
+**Зачем три обёртки одна в другой:**
 
 ```
-"Минск               45 60"
+Файл на диске
+    └── FileReader           — открывает файл, читает байты, переводит в символы (UTF-8)
+        └── BufferedReader   — загружает блок 8192 символа в память (буфер)
+            └── .readLine()  — берёт из буфера строку целиком
 ```
 
-**Режим 1 (фиксированная ширина):** первые 20 символов = название, остаток = числа
+Без буфера каждый вызов `readLine()` шёл бы на диск за каждым символом — тысячи обращений. С буфером — загрузился блок, дальше берём из памяти. Быстро.
 
+**Как работает буфер пошагово:**
+```
+1-й readLine(): идём на диск → грузим 8192 символа в буфер → возвращаем строку 1
+2-й readLine(): берём из буфера → строка 2 (диск не трогаем)
+3-й readLine(): берём из буфера → строка 3
+...
+N-й readLine(): буфер пуст → снова на диск → новый блок → строка N
+```
+
+**try-with-resources — зачем:**
 ```java
-String name = line.substring(0, 20).trim(); // "Минск"
-String[] nums = line.substring(20).trim().split("\\s+"); // ["45", "60"]
-int p = Integer.parseInt(nums[0]); // 45
-int t = Integer.parseInt(nums[1]); // 60
-```
+// БЕЗ — файл может остаться открытым навсегда:
+BufferedReader br = new BufferedReader(new FileReader(path.toFile()));
+// если здесь исключение — br.close() НЕ вызовется
+br.close();
 
-**Режим 2 (гибкий):** последние два токена = числа, остальное = название
-
-```java
-String[] tokens = line.trim().split("\\s+");
-// ["Минск", "45", "60"]
-int t = Integer.parseInt(tokens[tokens.length - 1]); // последний = 60
-int p = Integer.parseInt(tokens[tokens.length - 2]); // предпоследний = 45
-// name = всё остальное = "Минск"
-```
-
-### StationFormatException — зачем своё исключение
-
-```java
-// Без своего исключения — непонятно что случилось:
-throw new Exception("abc");
-
-// Со своим — сразу ясно: проблема с форматом данных станции:
-throw new StationFormatException("Строка 3: не удалось разобрать числа: 'Минск abc xyz'");
-```
-
-Extends Exception = checked. Java заставит всех кто вызывает StationParser.parse() либо поймать, либо объявить throws.
-
-### Два способа чтения — в чём разница
-
-**BufferedReader (классический):**
-```java
-while ((line = br.readLine()) != null) {
-    result.add(StationParser.parse(line));
+// С try-with-resources — Java гарантирует close() всегда:
+try (BufferedReader br = new BufferedReader(new FileReader(path.toFile()))) {
+    // даже если вылетело исключение — файл закроется
 }
 ```
-Читаем строку, обрабатываем, следующая строка. Понятно, линейно.
 
-**Files.lines() (функциональный):**
+---
+
+### Чтение способ 2 — Files.lines() (функциональный)
+
 ```java
-Files.lines(path)
-    .filter(s -> !s.isBlank())           // убрать пустые строки
-    .map(s -> StationParser.parse(s))    // каждую строку → Station
-    .collect(Collectors.toList());       // собрать в список
+try (Stream<String> lines = Files.lines(path)) {
+    return lines
+        .filter(s -> !s.isBlank())      // шаг 1: убираем пустые строки
+        .map(s -> StationParser.parse(s)) // шаг 2: строку → объект Station
+        .collect(Collectors.toList());    // шаг 3: собираем всё в List
+}
 ```
-Конвейер. Ленивый — читает строку только когда нужна. При огромных файлах не загружает всё в память сразу.
 
-### Проблема checked exception в лямбде
+**Это конвейер. Представь завод:**
+```
+Лента 1 (filter):   "Минск  45 60" ✅   ""❌   "Брест  30 90" ✅   "  "❌
+                          ↓                         ↓
+Лента 2 (map):    Station("Минск",45,60)     Station("Брест",30,90)
+                          ↓                         ↓
+Корзина (collect): [Station("Минск"...), Station("Брест"...)]
+```
+
+**Главное отличие от BufferedReader — ленивость:**
+```
+BufferedReader: читает ВСЕ строки файла → потом обрабатываем
+Files.lines():  читает строку ТОЛЬКО когда она нужна конвейеру
+
+Пример — файл 10 ГБ, нужна первая строка:
+  BufferedReader — загрузит всё в память → беда
+  Files.lines().findFirst() — прочитает одну строку и остановится
+```
+
+**Проблема: checked exception нельзя бросить в лямбде**
+
+Лямбда в `.map()` использует интерфейс `Function<String, Station>`:
+```java
+interface Function<T, R> {
+    R apply(T t);  // нет "throws Exception" — значит checked нельзя бросить
+}
+```
+
+`StationParser.parse()` бросает `StationFormatException` (checked). Это конфликт. Обходим так:
 
 ```java
 .map(s -> {
     try {
-        return StationParser.parse(s); // бросает StationFormatException (checked)
+        return StationParser.parse(s);
     } catch (StationFormatException e) {
-        throw new RuntimeException(e); // оборачиваем в unchecked — можно бросить
+        throw new RuntimeException(e); // оборачиваем в unchecked — можно!
     }
 })
+// ...
+catch (RuntimeException re) {
+    if (re.getCause() instanceof StationFormatException sfe) {
+        throw sfe; // разворачиваем обратно
+    }
+}
 ```
 
-Лямбда в `.map()` не может бросать checked exception — функциональный интерфейс Function не объявляет throws. Обходим: оборачиваем → пробрасываем → разворачиваем снаружи.
+```
+StationFormatException (checked — нельзя из лямбды)
+    → оборачиваем в RuntimeException (unchecked — можно)
+    → летит сквозь .map() и .collect()
+    → ловим снаружи
+    → достаём через getCause()
+    → бросаем правильно как StationFormatException
+```
+
+**Сравнение двух способов:**
+
+| | BufferedReader | Files.lines() |
+|--|--|--|
+| Стиль | Императивный (пишешь шаги) | Функциональный (описываешь что хочешь) |
+| Ленивость | Нет — читает всё | Да — читает по требованию |
+| Огромный файл | Может кончиться память | Экономит память |
+| Параллельность | Сложно добавить | `.parallel()` — одно слово |
+| Понятность | Проще для новичка | Компактнее, но сложнее читать |
+
+---
+
+### Парсинг строки — два режима (StationParser)
+
+Одна строка из файла может быть в двух форматах. Парсер пробует первый, если не вышло — второй.
+
+#### Режим 1 — фиксированная ширина (первые 20 символов = имя)
+
+Формат файла:
+```
+"Минск               45 60"
+ ^^^^^^^^^^^^^^^^^^^^
+ ровно 20 символов (имя дополнено пробелами)
+                     ^^ ^^
+                     числа через пробел
+```
+
+Код и что происходит пошагово:
+```java
+String name = line.substring(0, 20).trim();
+//  line     = "Минск               45 60"
+//  sub(0,20)= "Минск               "   ← первые 20 символов
+//  .trim()  = "Минск"                  ← убрали пробелы
+
+String tail  = line.substring(20).trim();
+//  sub(20)  = "45 60"                  ← всё после 20-го символа
+//  .trim()  = "45 60"
+
+String[] nums = tail.split("\\s+");
+//  split    = ["45", "60"]             ← разрезаем по пробелам
+
+int p = Integer.parseInt(nums[0]);      // "45" → 45
+int t = Integer.parseInt(nums[1]);      // "60" → 60
+
+return new Station("Минск", 45, 60);   // ✅
+```
+
+Проверка `line.length() >= 22` — нужно минимум 20 символов имени + пробел + хоть одна цифра. Короче — не этот формат.
+
+#### Режим 2 — гибкий (последние два слова = числа)
+
+Формат:
+```
+"Барановичи 10 30"
+ ^^^^^^^^^^  ^^ ^^
+ имя (любой длины)
+              последние два токена = числа
+```
+
+Код пошагово:
+```java
+String[] tokens = line.trim().split("\\s+");
+// "Барановичи 10 30" → ["Барановичи", "10", "30"]
+// "Санкт Петербург 120 80" → ["Санкт", "Петербург", "120", "80"]
+
+int t = Integer.parseInt(tokens[tokens.length - 1]); // последний  = "30" → 30
+int p = Integer.parseInt(tokens[tokens.length - 2]); // предпоследний = "10" → 10
+
+// имя = все токены кроме последних двух
+// для ["Санкт", "Петербург", "120", "80"]:
+//   i=0: "Санкт"
+//   i=1: "Санкт Петербург"
+// name = "Санкт Петербург"
+```
+
+#### Когда какой режим срабатывает
+
+```
+Строка "Минск               45 60"  (26 символов)
+  → длина >= 22? Да
+  → пробуем режим 1
+  → substring(20) = "45 60" → два числа → ✅ успех
+
+Строка "Барановичи 10 30"  (16 символов)
+  → длина >= 22? Нет
+  → сразу режим 2
+  → split → ["Барановичи", "10", "30"] → ✅ успех
+
+Строка "abc xyz"
+  → режим 2: tokens = ["abc", "xyz"] → length < 3
+  → StationFormatException("Слишком мало полей")  ❌
+
+Строка "Минск abc xyz"
+  → режим 2: tokens = ["Минск", "abc", "xyz"]
+  → parseInt("xyz") → NumberFormatException
+  → StationFormatException("Невозможно распознать числа")  ❌
+```
+
+---
+
+### StationFormatException — зачем своё исключение
+
+```java
+// Стандартное — технически верно, но непонятно:
+throw new NumberFormatException("For input string: \"abc\"");
+
+// Своё — сразу ясно что случилось и где:
+throw new StationFormatException("Строка 3: невозможно распознать числа: 'Минск abc xyz'");
+```
+
+`extends Exception` = checked. Java заставит каждого кто вызывает `StationParser.parse()` либо поймать (`catch`), либо объявить (`throws`). Нельзя проигнорировать.
+
+Два конструктора:
+```java
+// Простой — только сообщение:
+throw new StationFormatException("Пустая строка");
+
+// С причиной — сохраняем оригинальное исключение:
+} catch (NumberFormatException e) {
+    throw new StationFormatException("Не число: " + line, e);
+    //                                                     ^
+    //                             оригинальный NumberFormatException сохранён
+    //                             виден в стектрейсе через getCause()
+}
+```
 
 ---
 
